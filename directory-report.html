@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Printable Church Directory</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 0.5in;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: #1f2933;
+      line-height: 1.4;
+      margin: 0;
+      padding: 0 0 42px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      letter-spacing: 0.5px;
+      margin: 0;
+      color: #0f172a;
+      text-transform: uppercase;
+    }
+
+    .directory {
+      column-count: 2;
+      column-gap: 28px;
+      column-fill: auto;
+    }
+
+    .entry {
+      display: inline-block;
+      width: 100%;
+      margin: 0 0 18px 0;
+      padding: 12px 12px 10px;
+      border: 1px solid #d8e0e6;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+      break-inside: avoid;
+    }
+
+    .entry header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .entry header .name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #0f172a;
+    }
+
+    .entry header .address {
+      font-size: 13px;
+      color: #384656;
+      margin-top: 2px;
+    }
+
+    .photo {
+      width: 88px;
+      height: 88px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #d8e0e6;
+      background: #f3f6f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .details {
+      font-size: 13px;
+      color: #1f2933;
+      margin-left: 1px;
+    }
+
+    .contact {
+      margin: 0 0 6px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .contact li {
+      margin: 0 0 4px;
+    }
+
+    .children {
+      font-style: italic;
+      color: #52606d;
+      margin-top: 6px;
+    }
+
+    .divider {
+      border-top: 1px solid #e3e8ee;
+      margin: 8px 0;
+    }
+
+    footer {
+      position: fixed;
+      bottom: 12px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 11px;
+      color: #52606d;
+      background: #fff;
+      padding-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Church Directory</h1>
+  </div>
+
+  {% assign sorted_people = people | sort: 'last_name' %}
+  {% assign rendered_households = '' %}
+
+  <div class="directory">
+    {% for person in sorted_people %}
+      {% assign primary_household = person.primary_household | default: person.households.first %}
+      {% assign household_key = primary_household.id | default: person.id %}
+
+      {% unless rendered_households contains household_key %}
+        {% capture rendered_households %}{{ rendered_households }}|{{ household_key }}|{% endcapture %}
+
+        {% if primary_household %}
+          {% assign household_members = primary_household.people | sort: 'last_name' %}
+        {% else %}
+          {% assign household_members = people | where: 'id', person.id %}
+        {% endif %}
+
+        {% assign adults = household_members | where_exp: 'm', 'm.child == false' %}
+        {% if adults == empty %}
+          {% assign adults = household_members | where_exp: 'm', 'm.is_child == false' %}
+        {% endif %}
+        {% if adults == empty %}
+          {% assign adults = household_members %}
+        {% endif %}
+
+        {% assign children = household_members | where_exp: 'm', 'm.child' %}
+        {% if children == empty %}
+          {% assign children = household_members | where_exp: 'm', 'm.is_child' %}
+        {% endif %}
+
+        {% assign adult_names = '' %}
+        {% for adult in adults %}
+          {% if adult.first_name %}
+            {% capture adult_names %}{{ adult_names }}{{ adult.first_name }}{% if forloop.last == false %} & {% endif %}{% endcapture %}
+          {% endif %}
+        {% endfor %}
+
+        {% if primary_household %}
+          {% assign household_last_name = primary_household.name | remove: ' Household' | default: person.last_name %}
+          {% assign display_name = household_last_name %}
+        {% else %}
+          {% assign display_name = person.last_name %}
+        {% endif %}
+
+        {% assign formatted_name = display_name %}
+        {% if adult_names != '' %}
+          {% assign formatted_name = display_name | append: ', ' | append: adult_names %}
+        {% endif %}
+
+        {% assign mailing_address = nil %}
+
+        {% if primary_household %}
+          {% assign mailing_address = primary_household.primary_address %}
+          {% if mailing_address == nil %}
+            {% assign mailing_address = primary_household.addresses | where: 'primary_mailing', true | first %}
+          {% endif %}
+          {% if mailing_address == nil %}
+            {% assign mailing_address = primary_household.addresses | first %}
+          {% endif %}
+        {% endif %}
+        {% if mailing_address == nil %}
+          {% assign mailing_address = person.primary_address %}
+        {% endif %}
+        {% if mailing_address == nil %}
+          {% assign mailing_address = person.addresses | where: 'primary_mailing', true | first %}
+        {% endif %}
+        {% if mailing_address == nil %}
+          {% assign mailing_address = person.addresses | first %}
+        {% endif %}
+
+        <section class="entry">
+          <header>
+            <div class="photo">
+              {% if primary_household and primary_household.photo and primary_household.photo.url %}
+                <img src="{{ primary_household.photo.url }}" alt="{{ display_name }}" />
+              {% elsif person.primary_picture and person.primary_picture.original %}
+                <img src="{{ person.primary_picture.original }}" alt="{{ person.full_name }}" />
+              {% else %}
+                <div style="font-size:11px; color:#9aa5b1; text-align:center; line-height:1.3;">Photo Not Available</div>
+              {% endif %}
+            </div>
+            <div>
+              <div class="name">{{ formatted_name }}</div>
+              {% if mailing_address %}
+                <div class="address">{{ mailing_address.street_1 }}{% if mailing_address.street_2 %}, {{ mailing_address.street_2 }}{% endif %}<br />
+                  {{ mailing_address.city }}, {{ mailing_address.state }} {{ mailing_address.zip }}</div>
+              {% endif %}
+            </div>
+          </header>
+
+          <div class="divider"></div>
+          <div class="details">
+            <ul class="contact">
+              {% for member in household_members %}
+                {% assign mobile_phone = member.phone_numbers | where: 'location', 'Mobile' | first %}
+                {% if mobile_phone == nil %}
+                  {% assign mobile_phone = member.phone_numbers | where: 'location', 'mobile' | first %}
+                {% endif %}
+                {% if mobile_phone == nil %}
+                  {% assign mobile_phone = member.mobile_phone %}
+                {% endif %}
+                {% if mobile_phone == nil %}
+                  {% assign mobile_phone = member.phone_numbers | first %}
+                {% endif %}
+                {% if mobile_phone %}
+                  <li>{{ member.first_name }} (C) {{ mobile_phone.number | default: mobile_phone | phone_number }}</li>
+                {% endif %}
+
+                {% assign primary_email = member.email_addresses | where: 'primary', true | first %}
+                {% if primary_email == nil %}
+                  {% assign primary_email = member.emails | where: 'primary', true | first %}
+                {% endif %}
+                {% if primary_email == nil %}
+                  {% assign primary_email = member.email %}
+                {% endif %}
+                {% if primary_email == nil %}
+                  {% assign primary_email = member.emails | first %}
+                {% endif %}
+                {% if primary_email %}
+                  <li>{{ primary_email.address | default: primary_email }}</li>
+                {% endif %}
+              {% endfor %}
+            </ul>
+
+            {% assign child_names = '' %}
+            {% for kid in children %}
+              {% if kid.first_name %}
+                {% capture child_names %}{{ child_names }}{{ kid.first_name }}{% if forloop.last == false %}, {% endif %}{% endcapture %}
+              {% endif %}
+            {% endfor %}
+            {% if child_names != '' %}
+              <div class="children">{{ child_names }}</div>
+            {% endif %}
+          </div>
+        </section>
+      {% endunless %}
+    {% endfor %}
+  </div>
+
+  <footer>
+    Page {{ page }} of {{ total_pages }}
+  </footer>
+</body>
+</html>
