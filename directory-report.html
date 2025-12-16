@@ -141,30 +141,27 @@
 
   <div class="directory">
     {% for person in sorted_people %}
-      {% assign primary_household = person.primary_household | default: person.households.first %}
-      {% assign household_key = primary_household.id | default: person.id %}
+      {% assign household = person.primary_household %}
+      {% if household %}
+        {% assign household_id = household.id | append: '' %}
+      {% else %}
+        {% assign household_id = person.id | append: '' %}
+      {% endif %}
 
-      {% unless rendered_households contains household_key %}
-        {% capture rendered_households %}{{ rendered_households }}|{{ household_key }}|{% endcapture %}
+      {% unless rendered_households contains household_id %}
+        {% capture rendered_households %}{{ rendered_households }}|{{ household_id }}|{% endcapture %}
 
-        {% if primary_household %}
-          {% assign household_members = primary_household.people | sort: 'last_name' %}
-        {% else %}
-          {% assign household_members = people | where: 'id', person.id %}
+        {% assign household_members = sorted_people | where: 'primary_household_id', household.id %}
+        {% if household_members == empty %}
+          {% assign household_members = sorted_people | where: 'id', person.id %}
         {% endif %}
 
-        {% assign adults = household_members | where_exp: 'm', 'm.child == false' %}
-        {% if adults == empty %}
-          {% assign adults = household_members | where_exp: 'm', 'm.is_child == false' %}
-        {% endif %}
+        {% assign adults = household_members | where: 'status', 'active' %}
         {% if adults == empty %}
           {% assign adults = household_members %}
         {% endif %}
 
-        {% assign children = household_members | where_exp: 'm', 'm.child' %}
-        {% if children == empty %}
-          {% assign children = household_members | where_exp: 'm', 'm.is_child' %}
-        {% endif %}
+        {% assign children = household_members | where: 'primary_contact', false %}
 
         {% assign adult_names = '' %}
         {% for adult in adults %}
@@ -173,9 +170,8 @@
           {% endif %}
         {% endfor %}
 
-        {% if primary_household %}
-          {% assign household_last_name = primary_household.name | remove: ' Household' | default: person.last_name %}
-          {% assign display_name = household_last_name %}
+        {% if household %}
+          {% assign display_name = household.name | default: household.heads_of_household | default: person.last_name %}
         {% else %}
           {% assign display_name = person.last_name %}
         {% endif %}
@@ -185,43 +181,26 @@
           {% assign formatted_name = display_name | append: ', ' | append: adult_names %}
         {% endif %}
 
-        {% assign mailing_address = nil %}
-
-        {% if primary_household %}
-          {% assign mailing_address = primary_household.primary_address %}
-          {% if mailing_address == nil %}
-            {% assign mailing_address = primary_household.addresses | where: 'primary_mailing', true | first %}
-          {% endif %}
-          {% if mailing_address == nil %}
-            {% assign mailing_address = primary_household.addresses | first %}
-          {% endif %}
-        {% endif %}
-        {% if mailing_address == nil %}
-          {% assign mailing_address = person.primary_address %}
-        {% endif %}
-        {% if mailing_address == nil %}
-          {% assign mailing_address = person.addresses | where: 'primary_mailing', true | first %}
-        {% endif %}
-        {% if mailing_address == nil %}
-          {% assign mailing_address = person.addresses | first %}
-        {% endif %}
+        {% assign address = household.address | default: person.mailing_address %}
 
         <section class="entry">
           <header>
             <div class="photo">
-              {% if primary_household and primary_household.photo and primary_household.photo.url %}
-                <img src="{{ primary_household.photo.url }}" alt="{{ display_name }}" />
+              {% if household.photo and household.photo.url %}
+                <img src="{{ household.photo.url }}" alt="{{ display_name }}" />
               {% elsif person.primary_picture and person.primary_picture.original %}
                 <img src="{{ person.primary_picture.original }}" alt="{{ person.full_name }}" />
               {% else %}
-                <div style="font-size:11px; color:#9aa5b1; text-align:center; line-height:1.3;">Photo Not Available</div>
+                <div style="font-size:11px; color:#9aa5b1; text-align:center; line-height:1.3;">Photo
+                  Not
+                  Available</div>
               {% endif %}
             </div>
             <div>
               <div class="name">{{ formatted_name }}</div>
-              {% if mailing_address %}
-                <div class="address">{{ mailing_address.street_1 }}{% if mailing_address.street_2 %}, {{ mailing_address.street_2 }}{% endif %}<br />
-                  {{ mailing_address.city }}, {{ mailing_address.state }} {{ mailing_address.zip }}</div>
+              {% if address %}
+                <div class="address">{{ address.street_1 }}{% if address.street_2 %}, {{ address.street_2 }}{% endif %}<br />
+                  {{ address.city }}, {{ address.state }} {{ address.zip }}</div>
               {% endif %}
             </div>
           </header>
@@ -230,41 +209,18 @@
           <div class="details">
             <ul class="contact">
               {% for member in household_members %}
-                {% assign mobile_phone = member.phone_numbers | where: 'location', 'Mobile' | first %}
-                {% if mobile_phone == nil %}
-                  {% assign mobile_phone = member.phone_numbers | where: 'location', 'mobile' | first %}
+                {% if member.mobile %}
+                  <li>{{ member.first_name }} (C) {{ member.mobile | phone_number }}</li>
                 {% endif %}
-                {% if mobile_phone == nil %}
-                  {% assign mobile_phone = member.mobile_phone %}
-                {% endif %}
-                {% if mobile_phone == nil %}
-                  {% assign mobile_phone = member.phone_numbers | first %}
-                {% endif %}
-                {% if mobile_phone %}
-                  <li>{{ member.first_name }} (C) {{ mobile_phone.number | default: mobile_phone | phone_number }}</li>
-                {% endif %}
-
-                {% assign primary_email = member.email_addresses | where: 'primary', true | first %}
-                {% if primary_email == nil %}
-                  {% assign primary_email = member.emails | where: 'primary', true | first %}
-                {% endif %}
-                {% if primary_email == nil %}
-                  {% assign primary_email = member.email %}
-                {% endif %}
-                {% if primary_email == nil %}
-                  {% assign primary_email = member.emails | first %}
-                {% endif %}
-                {% if primary_email %}
-                  <li>{{ primary_email.address | default: primary_email }}</li>
+                {% if member.email %}
+                  <li>{{ member.email }}</li>
                 {% endif %}
               {% endfor %}
             </ul>
 
             {% assign child_names = '' %}
             {% for kid in children %}
-              {% if kid.first_name %}
-                {% capture child_names %}{{ child_names }}{{ kid.first_name }}{% if forloop.last == false %}, {% endif %}{% endcapture %}
-              {% endif %}
+              {% capture child_names %}{{ child_names }}{{ kid.first_name }}{% if forloop.last == false %}, {% endif %}{% endcapture %}
             {% endfor %}
             {% if child_names != '' %}
               <div class="children">{{ child_names }}</div>
